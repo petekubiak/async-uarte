@@ -1,0 +1,13 @@
+[package]
+name = "async-uarte"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
+cortex-m-rt = "0.7.3"
+embedded-hal = "1.0.0"
+fugit = "0.3.7"
+nrf52832-hal = { version = "0.18.0", default-features = false, features = ["rt", "xxAA-package", "embedded-hal-02"] }
+panic-rtt-target = "0.1.3"
+rtt-target = "0.5.0"
