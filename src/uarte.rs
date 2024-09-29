@@ -91,12 +91,12 @@ static UARTE0_INSTANCE: Mutex<RefCell<Option<Uarte0>>> = Mutex::new(RefCell::new
 fn UARTE0_UART0() {
     critical_section::with(|cs| {
         if let Some(instance) = UARTE0_INSTANCE.borrow_ref_mut(cs).deref_mut() {
-            if instance.inner.events_rxstarted.read().bits() == 1 {
-                instance.update_rxd_buffer_location();
-                instance.inner.events_rxstarted.reset();
-            } else if instance.inner.events_endrx.read().bits() == 1 {
+            if instance.inner.events_endrx.read().bits() == 1 {
                 instance.buffer[instance.write_offset].filled = true;
                 instance.inner.events_endrx.reset();
+            } else if instance.inner.events_rxstarted.read().bits() == 1 {
+                instance.update_rxd_buffer_location();
+                instance.inner.events_rxstarted.reset();
             } else if instance.inner.events_error.read().bits() == 1 {
                 instance.inner.tasks_flushrx.write(|w| unsafe { w.bits(1) });
                 instance.inner.events_error.reset();
