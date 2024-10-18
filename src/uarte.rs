@@ -21,68 +21,66 @@ struct Uarte0 {
     write_offset: usize,
 }
 
-impl Uarte0 {
-    pub fn init(pins: Pins, peripheral: UARTE0, baud_rate: Baudrate) {
-        // Enable UARTE peripheral
-        peripheral.enable.write(|w| {
-            w.enable()
-                .variant(nrf52832_hal::pac::uarte0::enable::ENABLE_A::ENABLED)
-        });
+pub fn init(peripheral: UARTE0, pins: Pins, baud_rate: Baudrate) {
+    // Enable UARTE peripheral
+    peripheral.enable.write(|w| {
+        w.enable()
+            .variant(nrf52832_hal::pac::uarte0::enable::ENABLE_A::ENABLED)
+    });
 
-        // Set RX and TX pins
-        peripheral
-            .psel
-            .rxd
-            .write(|w| w.pin().variant(pins.rxd.pin()));
-        peripheral
-            .psel
-            .txd
-            .write(|w| w.pin().variant(pins.txd.pin()));
+    // Set RX and TX pins
+    peripheral
+        .psel
+        .rxd
+        .write(|w| w.pin().variant(pins.rxd.pin()));
+    peripheral
+        .psel
+        .txd
+        .write(|w| w.pin().variant(pins.txd.pin()));
 
-        // Set baud rate
-        peripheral
-            .baudrate
-            .write(|w| w.baudrate().variant(baud_rate));
+    // Set baud rate
+    peripheral
+        .baudrate
+        .write(|w| w.baudrate().variant(baud_rate));
 
-        // Initialise the ENDRX -> STARTRX shortcut
-        peripheral.shorts.write(|w| w.endrx_startrx().set_bit());
+    // Initialise the ENDRX -> STARTRX shortcut
+    peripheral.shorts.write(|w| w.endrx_startrx().set_bit());
 
-        // Enable interrupt for RXSTARTED, ERROR and ENDRX events
-        peripheral
-            .intenset
-            .write(|w| w.rxstarted().set_bit().error().set_bit().endrx().set_bit());
+    // Enable interrupt for RXSTARTED, ERROR and ENDRX events
+    peripheral
+        .intenset
+        .write(|w| w.rxstarted().set_bit().error().set_bit().endrx().set_bit());
 
-        // Set up UARTE DMA
-        peripheral.rxd.maxcnt.write(|w| w.maxcnt().variant(5));
+    // Set up UARTE DMA
+    peripheral.rxd.maxcnt.write(|w| w.maxcnt().variant(5));
 
-        let mut instance = Self {
-            inner: peripheral,
-            buffer: core::array::from_fn(|_| Block::default()),
-            write_offset: 0,
-        };
-        instance.update_rxd_buffer_location();
+    let mut instance = Self {
+        inner: peripheral,
+        buffer: core::array::from_fn(|_| Block::default()),
+        write_offset: 0,
+    };
+    instance.update_rxd_buffer_location();
 
-        //Enable UARTE interrupt in NVIC
-        unsafe { nrf52832_hal::pac::NVIC::unmask(nrf52832_hal::pac::Interrupt::UARTE0_UART0) };
+    //Enable UARTE interrupt in NVIC
+    unsafe { nrf52832_hal::pac::NVIC::unmask(nrf52832_hal::pac::Interrupt::UARTE0_UART0) };
 
-        // Start UARTE and populate the static instance
-        critical_section::with(|cs| {
-            instance.inner.tasks_startrx.write(|w| unsafe { w.bits(1) });
-            UARTE0_INSTANCE.replace(cs, Some(instance));
-        });
-    }
+    // Start UARTE and populate the static instance
+    critical_section::with(|cs| {
+        instance.inner.tasks_startrx.write(|w| unsafe { w.bits(1) });
+        UARTE0_INSTANCE.replace(cs, Some(instance));
+    });
+}
 
-    fn update_rxd_buffer_location(&mut self) {
-        self.write_offset = (self.write_offset + 1) % BUFFER_SLOTS_COUNT;
-        assert!(
-            !self.buffer[self.write_offset].filled,
-            "UARTE buffer overflow!"
-        );
-        self.inner.rxd.ptr.write(|w| {
-            w.ptr()
-                .variant(self.buffer[self.write_offset].buffer.as_ptr() as u32)
-        });
-    }
+fn update_rxd_buffer_location(&mut self) {
+    self.write_offset = (self.write_offset + 1) % BUFFER_SLOTS_COUNT;
+    assert!(
+        !self.buffer[self.write_offset].filled,
+        "UARTE buffer overflow!"
+    );
+    self.inner.rxd.ptr.write(|w| {
+        w.ptr()
+            .variant(self.buffer[self.write_offset].buffer.as_ptr() as u32)
+    });
 }
 
 static UARTE0_INSTANCE: Mutex<RefCell<Option<Uarte0>>> = Mutex::new(RefCell::new(None));
