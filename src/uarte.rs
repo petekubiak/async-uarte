@@ -1,4 +1,5 @@
-use core::{cell::RefCell, ops::DerefMut as _};
+use core::cell::RefCell;
+use core::ops::DerefMut as _;
 
 use critical_section::Mutex;
 use nrf52832_hal::pac::interrupt;
@@ -19,6 +20,27 @@ struct Uarte0 {
     inner: UARTE0,
     buffer: [Block; BUFFER_SLOTS_COUNT],
     write_offset: usize,
+}
+
+impl Uarte0 {
+    pub fn new(peripheral: UARTE0) -> Self {
+        Self {
+            inner: peripheral,
+            buffer: core::array::from_fn(|_| Block::default()),
+            write_offset: 0,
+        }
+    }
+    fn update_rxd_buffer_location(&mut self) {
+        self.write_offset = (self.write_offset + 1) % BUFFER_SLOTS_COUNT;
+        assert!(
+            !self.buffer[self.write_offset].filled,
+            "UARTE buffer overflow!"
+        );
+        self.inner.rxd.ptr.write(|w| {
+            w.ptr()
+                .variant(self.buffer[self.write_offset].buffer.as_ptr() as u32)
+        });
+    }
 }
 
 pub fn init(peripheral: UARTE0, pins: Pins, baud_rate: Baudrate) {
@@ -54,32 +76,16 @@ pub fn init(peripheral: UARTE0, pins: Pins, baud_rate: Baudrate) {
     // Set up UARTE DMA
     peripheral.rxd.maxcnt.write(|w| w.maxcnt().variant(5));
 
-    let mut instance = Self {
-        inner: peripheral,
-        buffer: core::array::from_fn(|_| Block::default()),
-        write_offset: 0,
-    };
-    instance.update_rxd_buffer_location();
-
     //Enable UARTE interrupt in NVIC
     unsafe { nrf52832_hal::pac::NVIC::unmask(nrf52832_hal::pac::Interrupt::UARTE0_UART0) };
 
     // Start UARTE and populate the static instance
     critical_section::with(|cs| {
-        instance.inner.tasks_startrx.write(|w| unsafe { w.bits(1) });
-        UARTE0_INSTANCE.replace(cs, Some(instance));
-    });
-}
-
-fn update_rxd_buffer_location(&mut self) {
-    self.write_offset = (self.write_offset + 1) % BUFFER_SLOTS_COUNT;
-    assert!(
-        !self.buffer[self.write_offset].filled,
-        "UARTE buffer overflow!"
-    );
-    self.inner.rxd.ptr.write(|w| {
-        w.ptr()
-            .variant(self.buffer[self.write_offset].buffer.as_ptr() as u32)
+        UARTE0_INSTANCE.replace(cs, Some(Uarte0::new(peripheral)));
+        if let Some(instance) = UARTE0_INSTANCE.borrow_ref_mut(cs).deref_mut() {
+            instance.update_rxd_buffer_location();
+            instance.inner.tasks_startrx.write(|w| unsafe { w.bits(1) });
+        }
     });
 }
 
