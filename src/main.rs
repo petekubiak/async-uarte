@@ -19,6 +19,7 @@ fn main() -> ! {
     let peripherals = hal::pac::Peripherals::take().unwrap();
 
     let uarte0 = peripherals.UARTE0;
+    let clock = &peripherals.CLOCK;
     let gpio_p0 = hal::gpio::p0::Parts::new(peripherals.P0);
     let uarte_pins = Pins {
         rxd: gpio_p0.p0_03.into_floating_input().into(),
@@ -29,7 +30,7 @@ fn main() -> ! {
         cts: None,
         rts: None,
     };
-    uarte::init(uarte0, uarte_pins, Baudrate::BAUD9600);
+    uarte::init(uarte0, clock, uarte_pins, Baudrate::BAUD9600);
     rprintln!("UARTE initialised");
 
     let mut timer = hal::Timer::new(peripherals.TIMER0);
@@ -37,10 +38,8 @@ fn main() -> ! {
 
     loop {
         timer.delay_ms(500);
-        rprintln!("Setting pin low");
         led.set_low().unwrap();
         timer.delay_ms(500);
-        rprintln!("Setting pin high");
         led.set_high().unwrap();
     }
 }

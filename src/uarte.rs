@@ -2,7 +2,7 @@ use core::cell::RefCell;
 use core::ops::DerefMut as _;
 
 use critical_section::Mutex;
-use nrf52832_hal::pac::interrupt;
+use nrf52832_hal::pac::{interrupt, CLOCK};
 use nrf52832_hal::{
     pac::UARTE0,
     uarte::{Baudrate, Pins},
@@ -61,45 +61,51 @@ impl Uarte0 {
     }
 }
 
-pub fn init(peripheral: UARTE0, pins: Pins, baud_rate: Baudrate) {
+pub fn init(uarte: UARTE0, clock: &CLOCK, pins: Pins, baud_rate: Baudrate) {
+    // Start the HF clock
+    clock.tasks_hfclkstart.write(|w| unsafe { w.bits(1) });
+    rprintln!("HF clock started");
+
     // Enable UARTE peripheral
-    peripheral.enable.write(|w| {
+    uarte.enable.write(|w| {
         w.enable()
             .variant(nrf52832_hal::pac::uarte0::enable::ENABLE_A::ENABLED)
     });
 
     // Set RX and TX pins
-    peripheral
-        .psel
-        .rxd
-        .write(|w| w.pin().variant(pins.rxd.pin()));
-    peripheral
-        .psel
-        .txd
-        .write(|w| w.pin().variant(pins.txd.pin()));
+    uarte.psel.rxd.write(|w| {
+        w.pin()
+            .variant(pins.rxd.pin())
+            .connect()
+            .variant(nrf52832_hal::pac::uarte0::psel::rxd::CONNECT_A::CONNECTED)
+    });
+    uarte.psel.txd.write(|w| {
+        w.pin()
+            .variant(pins.txd.pin())
+            .connect()
+            .variant(nrf52832_hal::pac::uarte0::psel::txd::CONNECT_A::CONNECTED)
+    });
 
     // Set baud rate
-    peripheral
-        .baudrate
-        .write(|w| w.baudrate().variant(baud_rate));
+    uarte.baudrate.write(|w| w.baudrate().variant(baud_rate));
 
     // Initialise the ENDRX -> STARTRX shortcut
-    peripheral.shorts.write(|w| w.endrx_startrx().set_bit());
+    uarte.shorts.write(|w| w.endrx_startrx().set_bit());
 
     // Enable interrupt for RXSTARTED, ERROR and ENDRX events
-    peripheral
+    uarte
         .intenset
         .write(|w| w.rxstarted().set_bit().error().set_bit().endrx().set_bit());
 
     // Set up UARTE DMA
-    peripheral.rxd.maxcnt.write(|w| w.maxcnt().variant(5));
+    uarte.rxd.maxcnt.write(|w| w.maxcnt().variant(5));
 
     //Enable UARTE interrupt in NVIC
     unsafe { nrf52832_hal::pac::NVIC::unmask(nrf52832_hal::pac::Interrupt::UARTE0_UART0) };
 
     // Start UARTE and populate the static instance
     critical_section::with(|cs| {
-        UARTE0_INSTANCE.replace(cs, Some(Uarte0::new(peripheral)));
+        UARTE0_INSTANCE.replace(cs, Some(Uarte0::new(uarte)));
         if let Some(instance) = UARTE0_INSTANCE.borrow_ref_mut(cs).deref_mut() {
             instance.inner.rxd.ptr.write(|w| {
                 w.ptr()
